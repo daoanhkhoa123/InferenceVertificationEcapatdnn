@@ -1,12 +1,17 @@
-import torch
+from pathlib import Path
 from typing import Optional
+
+import torch
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 
-from model import ECAPA_TDNN
-from ultils import load_parameters, get_embedding, cosine_score
-from database import Database
+from src.model import ECAPA_TDNN
+from src.ultils import load_parameters, get_embedding, cosine_score
+from src.database import Database
 
-WEIGHT_PATH = r""
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_PATH = BASE_DIR / "data" / "database.json"
+WEIGHT_PATH = BASE_DIR / "data" / "weight.pth"
+
 THRESHOLD = 0.4249 # from testing
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
