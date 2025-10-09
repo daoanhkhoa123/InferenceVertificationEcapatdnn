@@ -57,7 +57,7 @@ async def verify(username: str, file: UploadFile = File(None)):
         emb_new = get_embedding(model, file, device)
         emb_ref = db.get_embedding(username)
         score = cosine_score(emb_new, emb_ref)
-        result = "accepted" if score > THRESHOLD else "rejected"
+        result = "accepted" if score > THRESHOLD else "`rejected`"
         logger.info(f"Voice verification for {username}: score={score:.4f}, result={result}")
         return {"username": username, "method": "voice", "score": score, "result": result}
 
