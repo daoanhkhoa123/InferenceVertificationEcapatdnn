@@ -26,7 +26,7 @@ def get_embedding(model, file:UploadFile, device):
     audio = torch.FloatTensor(audio).to(device).unsqueeze(0)
 
     with torch.no_grad():
-        emb = model(audio) 
+        emb = model(audio, False) 
     return F.normalize(emb, p=2, dim=1)  
 
 def cosine_score(emb1, emb2):
