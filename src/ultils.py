@@ -4,9 +4,9 @@ import soundfile as sf
 import torch.nn.functional as F
 from fastapi import UploadFile
 
-def load_parameters(self, path):
+def load_parameters(self, path, device = None):
     self_state = self.state_dict()
-    loaded_state = torch.load(path)
+    loaded_state = torch.load(path, map_location=device)
     for name, param in loaded_state.items():
         origname = name
         if name not in self_state:
