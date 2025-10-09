@@ -46,7 +46,7 @@ async def enroll(username: str, password: str = Form(...), file: UploadFile = Fi
     return {"status": "enrolled", "username": username}
 
 @app.post("/verify/{username}")
-async def verify(username: str, password: str = Form(...), file: UploadFile = File(None)):
+async def verify(username: str, password: str = Form(""), file: UploadFile = File(None)):
     logger.info(f"Verification request for user: {username}")
 
     # Check user exists
@@ -55,22 +55,26 @@ async def verify(username: str, password: str = Form(...), file: UploadFile = Fi
         logger.warning(f"Verification failed - user not found: {username}")
         raise HTTPException(status_code=404, detail="User not enrolled")
 
-    # Verify password
-    if not db.verify_password(username, password):
-        logger.warning(f"Verification failed - incorrect password for user: {username}")
-        raise HTTPException(status_code=401, detail="Invalid password")
+    # Verify password if provided (non-empty string)
+    if password and password.strip():
+        if db.verify_password(username, password):
+            logger.info(f"Password verification succeeded for user: {username}")
+            return {"username": username, "method": "password", "result": "accepted"}
+        else:
+            logger.warning(f"Verification failed - incorrect password for user: {username}")
+            raise HTTPException(status_code=401, detail="Invalid password")
 
     # Voice verification if file is provided
     if file is not None:
         emb_new = get_embedding(model, file, device)
-        emb_ref = db.get_embedding(username)
+        emb_ref = db.get_embedding(username, device)
         score = cosine_score(emb_new, emb_ref)
         result = "accepted" if score > THRESHOLD else "rejected"
         logger.info(f"Voice verification for {username}: score={score:.4f}, result={result}")
-        return {"username": username, "method": "voice+password", "score": score, "result": result}
+        return {"username": username, "method": "voice", "score": score, "result": result}
 
-    logger.warning(f"Verification failed - no voice file provided for user: {username}")
-    raise HTTPException(status_code=400, detail="Must provide voice")
+    logger.warning(f"Verification failed - neither password nor voice file provided for user: {username}")
+    raise HTTPException(status_code=400, detail="Must provide password or voice")
 
 @app.get("/users")
 async def list_users():
