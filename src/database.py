@@ -25,12 +25,15 @@ class Database:
             json.dump(self.data, f, indent=4)
         logger.debug(f"Database saved to {self.path}")
 
-    def add_user(self, username: str, voice_emb: torch.Tensor):
+    def add_user(self, username: str, password: str, voice_emb: torch.Tensor):
         if username in self.data:
             logger.warning(f"Attempt to add existing user: {username}")
             raise ValueError("Username already exists")
         emb_list = voice_emb.squeeze().cpu().numpy().tolist()
-        self.data[username] = {"voice_emb": emb_list}
+        self.data[username] = {
+            "password": password,
+            "voice_emb": emb_list
+        }
         self._save()
         logger.info(f"User added: {username}")
 
@@ -39,6 +42,17 @@ class Database:
         if user is None:
             logger.warning(f"User not found: {username}")
         return user
+
+    def verify_password(self, username: str, password: str) -> bool:
+        user = self.get_user(username)
+        if not user:
+            logger.warning(f"Password verification failed: user {username} not found")
+            return False
+        if user["password"] != password:
+            logger.warning(f"Password verification failed for user: {username}")
+            return False
+        logger.debug(f"Password verified for user: {username}")
+        return True
 
     def get_embedding(self, username: str):
         user = self.get_user(username)
