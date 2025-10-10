@@ -3,6 +3,7 @@ from typing import Optional
 
 import torch
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.model import ECAPA_TDNN
 from src.ultils import load_parameters, get_embedding, cosine_score
@@ -26,6 +27,15 @@ logger.info("Model loaded and set to eval mode")
 
 db = Database(str(DATA_PATH))
 app = FastAPI()
+
+# Add CORS middleware for Vite ReactJS frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 logger.info("FastAPI application initialized")
 
 @app.get("/")
