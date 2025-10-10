@@ -54,12 +54,12 @@ class Database:
         logger.debug(f"Password verified for user: {username}")
         return True
 
-    def get_embedding(self, username: str):
+    def get_embedding(self, username: str, device="cpu"):
         user = self.get_user(username)
         if not user:
             return None
         logger.debug(f"Retrieved embedding for user: {username}")
-        return torch.tensor(user["voice_emb"], dtype=torch.float32)
+        return torch.tensor(user["voice_emb"], dtype=torch.float32, device=device)
 
     def update_embedding(self, username: str, new_emb: torch.Tensor):
         if username not in self.data:
