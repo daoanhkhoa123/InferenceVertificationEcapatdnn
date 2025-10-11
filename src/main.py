@@ -50,6 +50,7 @@ async def root():
     return {"status": "running"}
 
 # Register routers
+router_voice.init_voice_router(db, model, device, THRESHOLD)
 app.include_router(
     router_voice.router,
     prefix="/voice",
