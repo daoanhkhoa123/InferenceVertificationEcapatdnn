@@ -8,7 +8,7 @@ from src.ultils_logger import get_logger
 from src.database import Database
 from src.voice_model import ECAPA_TDNN
 from src.voice_ultils import load_parameters
-from src import router_voice
+from src import router_voice, router_chats
 
 logger = get_logger(__name__)
 
@@ -51,8 +51,18 @@ async def root():
 
 # Register routers
 router_voice.init_voice_router(db, model, device, THRESHOLD)
+
+N8N_WEBHOOK_URL = "http://localhost:5678/webhook/chat"  # example URL
+router_chats.init_chat_router(db, N8N_WEBHOOK_URL)
+
 app.include_router(
     router_voice.router,
     prefix="/voice",
     tags=["voice"]
+)
+
+app.include_router(
+    router_chats.router,
+    prefix="/chats",
+    tags=["chats"]
 )
