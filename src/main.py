@@ -5,10 +5,10 @@ import torch
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.model import ECAPA_TDNN
-from src.ultils import load_parameters, get_embedding, cosine_score
+from src.voice_model import ECAPA_TDNN
+from src.voice_ultils import load_parameters, get_embedding, cosine_score
 from src.database import Database
-from src.logger import get_logger
+from src.ultils_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -91,3 +91,5 @@ async def list_users():
     logger.debug("Listing all users")
     users = list(db.data.keys())
     return {"count": len(users), "users": users}
+
+
