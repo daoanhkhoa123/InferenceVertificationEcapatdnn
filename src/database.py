@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Literal, List, Dict, Optional, TypedDict, Any
+from typing import Literal, List, Dict, Optional, TypedDict
 import torch
 
 from src.ultils_logger import get_logger
@@ -120,6 +120,7 @@ class Database:
         sessions = user["sessions"]
         if session_id not in sessions:
             raise ValueError("Session not found")
+        
         return sessions[session_id]["messages"]
 
     def list_sessions(self, username: str) -> List[str]:
