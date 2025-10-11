@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
 import requests
 import datetime
 
 from src.database import Database
 from src.ultils_logger import get_logger
+
+from fastapi import APIRouter, HTTPException, UploadFile
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -114,3 +115,54 @@ async def send_message(username: str, session_id: str, user_message: str):
 
     logger.info(f"Chat [{session_id}] {username}: {user_message} → {bot_reply}")
     return {"reply": bot_reply}
+
+
+async def send_voice(username:str, session_id:str, user_voice:UploadFile):
+    if db is None or not N8N_WEBHOOK_URL:
+        raise HTTPException(status_code=500, detail="Chat router not initialized")
+
+    try:
+        # Read the file bytes to forward to n8n
+        file_bytes = await user_voice.read()
+    except Exception as e:
+        logger.error(f"Failed to read voice file: {e}")
+        raise HTTPException(status_code=400, detail="Invalid file upload")
+
+    # Send voice file to n8n as multipart/form-data
+    try:
+        files = {"file": (user_voice.filename, file_bytes, user_voice.content_type)}
+        data = {"username": username, "session_id": session_id}
+
+        resp = requests.post(N8N_WEBHOOK_URL, data=data, files=files, timeout=60) # type: ignore
+        resp.raise_for_status()
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to contact n8n for voice message: {e}")
+        raise HTTPException(status_code=502, detail="Failed to contact n8n")
+
+    # Parse n8n response
+    try:
+        n8n_data = resp.json()
+    except ValueError:
+        n8n_data = {}
+
+    # n8n should return both transcription and reply
+    transcription = n8n_data.get("transcript", "(no transcription)")
+    bot_reply = n8n_data.get("reply", "(no reply)")
+
+    # Save transcribed message as human
+    db.add_message(username, session_id, {
+        "time": _now(),
+        "role": "human",
+        "message": "[TRANSCRIPTION] " + transcription
+    })
+
+    # Save bot reply
+    db.add_message(username, session_id, {
+        "time": _now(),
+        "role": "bot",
+        "message": bot_reply
+    })
+
+    logger.info(f"[VoiceChat] [{session_id}] {username}: {transcription}; Reply: {bot_reply}")
+    return {"transcript": transcription, "reply": bot_reply}
