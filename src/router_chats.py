@@ -1,6 +1,4 @@
-from typing import Dict, Any
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 import requests
 import datetime
 
