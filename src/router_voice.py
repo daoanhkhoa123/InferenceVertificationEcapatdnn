@@ -39,6 +39,7 @@ async def enroll(username: str, password: str = Form(...), file: UploadFile = Fi
 
 @router.post("/verify/{username}")
 async def verify(username: str, password: str = Form(""), file: UploadFile = File(None)):
+    raise NotImplementedError("Do not use this")
     logger.info(f"Verification request for user: {username}")
 
     user = db.get_user(username)
@@ -67,6 +68,50 @@ async def verify(username: str, password: str = Form(""), file: UploadFile = Fil
     logger.warning(f"Verification failed - neither password nor voice file provided for user: {username}")
     raise HTTPException(status_code=400, detail="Must provide password or voice")
 
+@router.post("/verify/password/{username}")
+async def verify_password(username: str, password: str = Form(...)):
+    """
+    Verify a user's identity using password.
+    """
+    logger.info(f"[Password Verify] Request for user: {username}")
+
+    user = db.get_user(username)
+    if not user:
+        logger.warning(f"Password verification failed - user not found: {username}")
+        raise HTTPException(status_code=404, detail="User not enrolled")
+
+    # Check password
+    if db.verify_password(username, password):
+        logger.info(f"Password verification succeeded for user: {username}")
+        return {"username": username, "method": "password", "result": "accepted"}
+
+    logger.warning(f"Password verification failed - incorrect password for user: {username}")
+    raise HTTPException(status_code=401, detail="Invalid password")
+
+@router.post("/verify/voice/{username}")
+async def verify_voice(username: str, file: UploadFile = File(...)):
+    """
+    Verify a user's identity using voice embedding.
+    """
+    logger.info(f"[Voice Verify] Request for user: {username}")
+
+    user = db.get_user(username)
+    if not user:
+        logger.warning(f"Voice verification failed - user not found: {username}")
+        raise HTTPException(status_code=404, detail="User not enrolled")
+
+    try:
+        emb_new = get_embedding(model, file, device)
+        emb_ref = db.get_embedding(username, device)
+    except Exception as e:
+        logger.error(f"Voice verification error for {username}: {e}")
+        raise HTTPException(status_code=400, detail="Failed to process voice file")
+
+    score = cosine_score(emb_new, emb_ref)
+    result = "accepted" if score > THRESHOLD else "rejected"
+
+    logger.info(f"Voice verification for {username}: score={score:.4f}, result={result}")
+    return {"username": username, "method": "voice", "score": score, "result": result}
 
 @router.get("/users")
 async def list_users():

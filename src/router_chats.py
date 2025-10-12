@@ -43,28 +43,24 @@ async def create_chat_session(username: str, session_name:str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.get("/session/{username}")
-async def list_chat_sessions(username: str):
-    """List all chat session IDs for a user"""
+@router.get("/sessions/{username}")
+async def get_all_chat_sessionids(username: str):
     if db is None:
         raise HTTPException(status_code=500, detail="Chat router not initialized")
-
     try:
-        sessions = db.list_sessions(username)
-        return {"username": username, "session_ids": sessions}
-    
+        return db.list_sessions(username)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
+    
 
-@router.get("/messages/{username}/{session_id}")
-async def get_messages(username: str, session_id: str):
-    """Get the full message history for a session"""
+@router.get("/session/{username}/{session_id}")
+async def get_chat_session(username: str, session_id: str):
+    """Get a specific chat session for a user"""
     if db is None:
         raise HTTPException(status_code=500, detail="Chat router not initialized")
 
     try:
-        messages = db.get_session_messages(username, session_id)
-        return {"username": username, "session_id": session_id, "messages": messages}
+        return db.get_session(username, session_id)
     
     except ValueError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -73,7 +69,7 @@ async def get_messages(username: str, session_id: str):
 @router.post("/send/{username}/{session_id}")
 async def send_message(username: str, session_id: str, user_message: str):
     """
-    Send a user message to n8n → get LLM response → store both messages
+    Send a user message to n8n -> get LLM response -> store both messages
     """
     if db is None or not N8N_WEBHOOK_URL:
         raise HTTPException(status_code=500, detail="Chat router not initialized")
@@ -116,7 +112,7 @@ async def send_message(username: str, session_id: str, user_message: str):
     logger.info(f"Chat [{session_id}] {username}: {user_message} → {bot_reply}")
     return {"reply": bot_reply}
 
-
+@router.post("/send-voice/{username}/{session_id}")
 async def send_voice(username:str, session_id:str, user_voice:UploadFile):
     if db is None or not N8N_WEBHOOK_URL:
         raise HTTPException(status_code=500, detail="Chat router not initialized")
@@ -147,6 +143,7 @@ async def send_voice(username:str, session_id:str, user_voice:UploadFile):
         n8n_data = {}
 
     # n8n should return both transcription and reply
+    logger.info(n8n_data)
     transcription = n8n_data.get("transcript", "(no transcription)")
     bot_reply = n8n_data.get("reply", "(no reply)")
 
@@ -164,5 +161,19 @@ async def send_voice(username:str, session_id:str, user_voice:UploadFile):
         "message": bot_reply
     })
 
-    logger.info(f"[VoiceChat] [{session_id}] {username}: {transcription}; Reply: {bot_reply}")
+    logger.info(f"[VoiceChat] [{session_id}] [{username}] Transcription: {transcription}; Reply: {bot_reply}")
     return {"transcript": transcription, "reply": bot_reply}
+
+@router.delete("/session/{username}/{session_id}")
+async def delete_chat_session(username: str, session_id: str):
+    """Delete a specific chat session for a user"""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Chat router not initialized")
+
+    try:
+        db.delete_session(username, session_id)
+        return {
+            "message": f"Session {session_id} deleted for user {username}"
+        }
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session not found")
