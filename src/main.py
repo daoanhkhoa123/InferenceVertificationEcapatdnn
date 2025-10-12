@@ -8,7 +8,7 @@ from src.ultils_logger import get_logger
 from src.database import Database
 from src.voice_model import ECAPA_TDNN
 from src.voice_ultils import load_parameters
-from src import router_voice
+from src import router_voice, router_chats
 
 logger = get_logger(__name__)
 
@@ -51,8 +51,19 @@ async def root():
 
 # Register routers
 router_voice.init_voice_router(db, model, device, THRESHOLD)
+
+# N8N_WEBHOOK_URL = "https://somebigguy.app.n8n.cloud/webhook-test/0e2eee96-5d66-4697-9839-c5c1e1613105"  # example URL
+N8N_WEBHOOK_URL = "https://somebigguy.app.n8n.cloud/webhook/0e2eee96-5d66-4697-9839-c5c1e1613105"  # example URL
+router_chats.init_chat_router(db, N8N_WEBHOOK_URL)
+
 app.include_router(
     router_voice.router,
     prefix="/voice",
     tags=["voice"]
+)
+
+app.include_router(
+    router_chats.router,
+    prefix="/chats",
+    tags=["chats"]
 )

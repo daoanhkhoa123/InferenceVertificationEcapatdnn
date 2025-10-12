@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Literal, List, Dict, Optional, TypedDict, Any
+from typing import Literal, List, Dict, Optional, TypedDict
 import torch
 
 from src.ultils_logger import get_logger
@@ -120,8 +120,37 @@ class Database:
         sessions = user["sessions"]
         if session_id not in sessions:
             raise ValueError("Session not found")
+        
         return sessions[session_id]["messages"]
 
     def list_sessions(self, username: str) -> List[str]:
         user = self.get_user(username)
         return list(user["sessions"].keys())
+
+    def get_session(self, username: str, session_id: str) -> SessionData:
+        """
+        Return a specific chat session by ID.
+        Raises ValueError if not found.
+        """
+        user = self.get_user(username)
+        sessions = user["sessions"]
+        if session_id not in sessions:
+            logger.error(f"Session not found for user={username}, session_id={session_id}")
+            raise ValueError("Session not found")
+        return sessions[session_id]
+
+    def delete_session(self, username: str, session_id: str):
+        """
+        Delete a specific chat session by ID.
+        Raises ValueError if not found.
+        """
+        uname = self.get_username(username)
+        user = self.get_user(uname) # type: ignore
+        sessions = user["sessions"]
+        if session_id not in sessions:
+            logger.error(f"Tried to delete non-existent session: user={username}, session_id={session_id}")
+            raise ValueError("Session not found")
+
+        del sessions[session_id]
+        self._save()
+        logger.info(f"Deleted session {session_id} for user {username}")
