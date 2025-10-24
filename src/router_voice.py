@@ -38,35 +38,48 @@ async def enroll(username: str, password: str = Form(...), file: UploadFile = Fi
 
 
 @router.post("/verify/{username}")
-async def verify(username: str, password: str = Form(""), file: UploadFile = File(None)):
-    raise NotImplementedError("Do not use this")
-    logger.info(f"Verification request for user: {username}")
+async def verify_user(username: str, password: str = Form(None), file: UploadFile = File(None)):
+    """
+    Verify a user's identity using either password or voice embedding.
+    """
+    logger.info(f"[Verify] Request for user: {username}")
 
     user = db.get_user(username)
     if not user:
         logger.warning(f"Verification failed - user not found: {username}")
         raise HTTPException(status_code=404, detail="User not enrolled")
 
-    # Password check
-    if password and password.strip():
+    # Password verification
+    if password is not None:
+        logger.info(f"[Password Verify] Attempt for user: {username}")
+
         if db.verify_password(username, password):
             logger.info(f"Password verification succeeded for user: {username}")
             return {"username": username, "method": "password", "result": "accepted"}
-        else:
-            logger.warning(f"Verification failed - incorrect password for user: {username}")
-            raise HTTPException(status_code=401, detail="Invalid password")
 
-    # Voice check
+        logger.warning(f"Password verification failed - incorrect password for user: {username}")
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    # Voice verification
     if file is not None:
-        emb_new = get_embedding(model, file, device)
-        emb_ref = db.get_embedding(username, device)
+        logger.info(f"[Voice Verify] Attempt for user: {username}")
+
+        try:
+            emb_new = get_embedding(model, file, device)
+            emb_ref = db.get_embedding(username, device)
+        except Exception as e:
+            logger.error(f"Voice verification error for {username}: {e}")
+            raise HTTPException(status_code=400, detail="Failed to process voice file")
+
         score = cosine_score(emb_new, emb_ref)
         result = "accepted" if score > THRESHOLD else "rejected"
+
         logger.info(f"Voice verification for {username}: score={score:.4f}, result={result}")
         return {"username": username, "method": "voice", "score": score, "result": result}
 
-    logger.warning(f"Verification failed - neither password nor voice file provided for user: {username}")
-    raise HTTPException(status_code=400, detail="Must provide password or voice")
+    logger.warning(f"Verification failed - no input provided for user: {username}")
+    raise HTTPException(status_code=400, detail="No verification data provided")
+
 
 @router.post("/verify/password/{username}")
 async def verify_password(username: str, password: str = Form(...)):

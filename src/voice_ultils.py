@@ -1,6 +1,8 @@
+import io
+import ffmpeg
+import soundfile as sf
 import numpy as np
 import torch
-import soundfile as sf
 import torch.nn.functional as F
 from fastapi import UploadFile
 
@@ -19,8 +21,20 @@ def load_parameters(self, path, device = None):
             continue
         self_state[name].copy_(param)
 
+def _load_any_format(file: UploadFile, sr: int = 16000):
+    data = file.file.read()
+    out, _ = (
+        ffmpeg
+        .input('pipe:0')
+        .output('pipe:1', format='wav', acodec='pcm_s16le', ac=1, ar=sr)
+        .run(input=data, capture_stdout=True, capture_stderr=True, quiet=True)
+    )
+    audio, sr = sf.read(io.BytesIO(out), dtype='float32')
+    return audio, sr
+
+
 def get_embedding(model, file:UploadFile, device):
-    audio, sr= sf.read(file.file)
+    audio, sr= _load_any_format(file)
     if len(audio.shape) > 1:
         audio = np.mean(audio, axis=1)
     audio = torch.FloatTensor(audio).to(device).unsqueeze(0)
