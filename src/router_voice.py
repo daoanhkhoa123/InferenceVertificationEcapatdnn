@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form
 from typing import Callable
 
 from src.voice_ultils import get_embedding, cosine_score
@@ -8,17 +8,17 @@ from src.ultils_logger import get_logger
 from src.load_assist import infer_assist
 
 logger = get_logger(__name__)
-
 router = APIRouter()
 
-# Globals will be injected from main
+# Globals injected externally
 db: Database
 model: ECAPA_TDNN
 assist_model: Callable
 device: str
 THRESHOLD: float
 
-def init_voice_router(database: Database, mdl: ECAPA_TDNN, assist_mdl:Callable, dev: str, threshold: float):
+
+def init_voice_router(database: Database, mdl: ECAPA_TDNN, assist_mdl: Callable, dev: str, threshold: float):
     global db, model, assist_model, device, THRESHOLD
     db = database
     model = mdl
@@ -31,150 +31,128 @@ def init_voice_router(database: Database, mdl: ECAPA_TDNN, assist_mdl:Callable, 
 async def enroll(username: str, password: str = Form(...), file: UploadFile = File(...)):
     logger.info(f"Enroll request received for user: {username}")
     emb = get_embedding(model, file, device)
-    try:
-        db.add_user(username, password, emb)
-        logger.info(f"User enrolled: {username}")
-    except ValueError:
+
+    if db.get_user(username):
         logger.warning(f"Enroll failed - username exists: {username}")
-        raise HTTPException(status_code=400, detail="Username already exists")
-    return {"status": "enrolled", "username": username}
+        return {"status": "failed", "message": "Username already exists"}
+
+    db.add_user(username, password, emb)
+    logger.info(f"User enrolled: {username}")
+    return {"status": "success", "username": username}
 
 
 @router.post("/verify/{username}")
 async def verify_user(username: str, password: str = Form(None), file: UploadFile = File(None)):
-    """
-    Verify a user's identity using BOTH password and voice embedding.
-    Both must pass verification.
-    """
     logger.info(f"[Verify] Request for user: {username}")
 
-    status = infer_assist(assist_model, file, device)
-    if status != "bonafide":
-        logger.warning(f"Verification rejected for {username}: spoofed voice detected")
-        raise HTTPException(status_code=403, detail="Spoofed or synthetic voice detected")
+    if not file or not password:
+        return {"status": "failed", "message": "Password and voice file are required"}
 
     user = db.get_user(username)
     if not user:
-        logger.warning(f"Verification failed - user not found: {username}")
-        raise HTTPException(status_code=404, detail="User not enrolled")
+        return {"status": "failed", "message": "User not enrolled"}
 
-    # Check both fields provided
-    if password is None or file is None:
-        logger.warning(f"Verification failed - missing password or voice for user: {username}")
-        raise HTTPException(status_code=400, detail="Password and voice file are required")
+    # Anti-spoof check
+    status = infer_assist(assist_model, file, device)
+    if status != "bonafide":
+        return {"status": "failed", "message": "Spoofed or synthetic voice detected", "assist": status}
 
-    # Password verification
-    logger.info(f"[Password Verify] Attempt for user: {username}")
+    # Password check
     if not db.verify_password(username, password):
-        logger.warning(f"Password verification failed for user: {username}")
-        raise HTTPException(status_code=401, detail="Invalid password")
+        return {"status": "failed", "message": "Invalid password"}
 
     # Voice verification
-    logger.info(f"[Voice Verify] Attempt for user: {username}")
     try:
         emb_new = get_embedding(model, file, device)
         emb_ref = db.get_embedding(username, device)
+        score = cosine_score(emb_new, emb_ref)
     except Exception as e:
         logger.error(f"Voice verification error for {username}: {e}")
-        raise HTTPException(status_code=400, detail="Failed to process voice file")
+        return {"status": "error", "message": "Failed to process voice file"}
 
-    score = cosine_score(emb_new, emb_ref)
-    if score <= THRESHOLD:
-        logger.warning(f"Voice verification failed for {username}: score={score:.4f}")
-        raise HTTPException(status_code=401, detail="Voice verification failed")
+    result = "accepted" if score > THRESHOLD else "rejected"
+    logger.info(f"Verification for {username}: score={score:.4f}, result={result}")
 
-    logger.info(f"Verification succeeded for {username}: score={score:.4f}")
-    return {"username": username, "method": "password+voice", "score": score, "result": "accepted"}
-
+    return {
+        "status": result,
+        "username": username,
+        "method": "password+voice",
+        "score": score,
+        "assist": status,
+    }
 
 
 @router.post("/verify/password/{username}")
 async def verify_password(username: str, password: str = Form(...)):
-    """
-    Verify a user's identity using password.
-    """
     logger.info(f"[Password Verify] Request for user: {username}")
 
     user = db.get_user(username)
     if not user:
-        logger.warning(f"Password verification failed - user not found: {username}")
-        raise HTTPException(status_code=404, detail="User not enrolled")
+        return {"status": "failed", "message": "User not enrolled"}
 
-    # Check password
     if db.verify_password(username, password):
-        logger.info(f"Password verification succeeded for user: {username}")
-        return {"username": username, "method": "password", "result": "accepted"}
+        return {"status": "success", "username": username, "method": "password"}
 
-    logger.warning(f"Password verification failed - incorrect password for user: {username}")
-    raise HTTPException(status_code=401, detail="Invalid password")
+    return {"status": "failed", "message": "Invalid password"}
+
 
 @router.post("/verify/voice/{username}")
 async def verify_voice(username: str, file: UploadFile = File(...)):
-    """
-    Verify a user's identity using voice embedding with anti-spoofing check.
-    """
     logger.info(f"[Voice Verify] Request for user: {username}")
 
     user = db.get_user(username)
     if not user:
-        logger.warning(f"Voice verification failed - user not found: {username}")
-        raise HTTPException(status_code=404, detail="User not enrolled")
+        return {"status": "failed", "message": "User not enrolled"}
 
-    # 🛡️ Anti-spoofing check
+    # Anti-spoof check
     try:
         status = infer_assist(assist_model, file, device)
-        logger.info(f"[Assist Model] Liveness result for {username}: {status}")
         if status != "bonafide":
-            raise HTTPException(status_code=403, detail="Spoofed or synthetic voice detected")
+            return {"status": "failed", "message": "Spoofed or synthetic voice detected", "assist": status}
     except Exception as e:
-        logger.error(f"Assist model inference failed for {username}: {e}")
-        raise HTTPException(status_code=400, detail="Assist model failed to process voice")
+        logger.error(f"Assist model error: {e}")
+        return {"status": "error", "message": "Assist model failed"}
 
-    # 🎙️ Normal embedding verification
+    # Voice embedding check
     try:
         emb_new = get_embedding(model, file, device)
         emb_ref = db.get_embedding(username, device)
+        score = cosine_score(emb_new, emb_ref)
     except Exception as e:
-        logger.error(f"Voice verification error for {username}: {e}")
-        raise HTTPException(status_code=400, detail="Failed to process voice file")
+        logger.error(f"Voice processing error: {e}")
+        return {"status": "error", "message": "Failed to process voice file"}
 
-    score = cosine_score(emb_new, emb_ref)
     result = "accepted" if score > THRESHOLD else "rejected"
-
-    logger.info(f"Voice verification for {username}: score={score:.4f}, result={result}")
     return {
+        "status": result,
         "username": username,
         "method": "voice",
         "score": score,
         "assist": status,
-        "result": result
     }
+
 
 @router.post("/spoofcheck")
 async def spoof_check(file: UploadFile = File(...)):
-    """
-    Check if a given voice sample is bonafide (real) or spoofed (synthetic/attack).
-    Uses the assist_model only.
-    """
-    logger.info(f"[SpoofCheck] Received file: {file.filename}")
+    logger.info(f"[SpoofCheck] File received: {file.filename if file else 'None'}")
 
     if not file:
-        raise HTTPException(status_code=400, detail="No file uploaded")
+        return {"status": "failed", "message": "No file uploaded"}
 
     try:
         result = infer_assist(assist_model, file, device)
-        logger.info(f"[SpoofCheck] Result for {file.filename}: {result}")
         return {
+            "status": "success",
             "filename": file.filename,
             "result": result,
-            "description": "bonafide = real speaker, spoofed = synthetic or attack sample",
+            "description": "bonafide = real, spoofed = synthetic or attack",
         }
     except Exception as e:
-        logger.error(f"[SpoofCheck] Error processing {file.filename}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to analyze voice file")
+        logger.error(f"SpoofCheck error: {e}")
+        return {"status": "error", "message": "Failed to analyze voice file"}
+
 
 @router.get("/users")
 async def list_users():
-    logger.debug("Listing all users")
     users = list(db.data.keys())
-    return {"count": len(users), "users": users}
+    return {"status": "success", "count": len(users), "users": users}
