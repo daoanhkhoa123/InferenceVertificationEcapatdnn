@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.ultils_logger import get_logger
 from src.database import Database
 from src.voice_model import ECAPA_TDNN
+from src.load_assist import get_assist_model
 from src.voice_ultils import load_parameters
 from src import router_voice, router_chats
 
@@ -16,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_PATH = BASE_DIR / "data" / "database.json"
 WEIGHT_PATH = BASE_DIR / "assets" / "best_model_epoch9_20251001_064344.pt"
 
-THRESHOLD = 0.54
+THRESHOLD = 0.8
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Load model
@@ -24,6 +25,7 @@ logger.info(f"Loading model on {device}")
 model = ECAPA_TDNN(C=1024).to(device)
 load_parameters(model, WEIGHT_PATH, device)
 model.eval()
+assist_model = get_assist_model(device)
 logger.info("Model loaded and set to eval mode")
 
 # Initialize database
@@ -50,7 +52,7 @@ async def root():
     return {"status": "running"}
 
 # Register routers
-router_voice.init_voice_router(db, model, device, THRESHOLD)
+router_voice.init_voice_router(db, model, assist_model, device, THRESHOLD)
 
 # N8N_WEBHOOK_URL = "https://somebigguy.app.n8n.cloud/webhook-test/0e2eee96-5d66-4697-9839-c5c1e1613105"  # example URL
 N8N_WEBHOOK_URL = "https://somebigguy.app.n8n.cloud/webhook/0e2eee96-5d66-4697-9839-c5c1e1613105"  # example URL
