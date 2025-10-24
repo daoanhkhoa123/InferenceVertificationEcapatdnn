@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import Callable
 
 from src.voice_ultils import get_embedding, cosine_score
@@ -30,7 +30,11 @@ def init_voice_router(database: Database, mdl: ECAPA_TDNN, assist_mdl: Callable,
 @router.post("/enroll/{username}")
 async def enroll(username: str, password: str = Form(...), file: UploadFile = File(...)):
     logger.info(f"Enroll request received for user: {username}")
-    emb = get_embedding(model, file, device)
+    try:
+        emb = get_embedding(model, file, device)
+    except Exception as e:
+        logger.error(f"Embedding extraction failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process voice file")
 
     if db.get_user(username):
         logger.warning(f"Enroll failed - username exists: {username}")
@@ -53,7 +57,12 @@ async def verify_user(username: str, password: str = Form(None), file: UploadFil
         return {"status": "failed", "message": "User not enrolled"}
 
     # Anti-spoof check
-    status = infer_assist(assist_model, file, device)
+    try:
+        status = infer_assist(assist_model, file, device)
+    except Exception as e:
+        logger.error(f"Assist model failed: {e}")
+        raise HTTPException(status_code=500, detail="Assist model internal error")
+
     if status != "bonafide":
         return {"status": "failed", "message": "Spoofed or synthetic voice detected", "assist": status}
 
@@ -68,7 +77,7 @@ async def verify_user(username: str, password: str = Form(None), file: UploadFil
         score = cosine_score(emb_new, emb_ref)
     except Exception as e:
         logger.error(f"Voice verification error for {username}: {e}")
-        return {"status": "error", "message": "Failed to process voice file"}
+        raise HTTPException(status_code=500, detail="Voice processing failed")
 
     result = "accepted" if score > THRESHOLD else "rejected"
     logger.info(f"Verification for {username}: score={score:.4f}, result={result}")
@@ -104,23 +113,22 @@ async def verify_voice(username: str, file: UploadFile = File(...)):
     if not user:
         return {"status": "failed", "message": "User not enrolled"}
 
-    # Anti-spoof check
     try:
         status = infer_assist(assist_model, file, device)
-        if status != "bonafide":
-            return {"status": "failed", "message": "Spoofed or synthetic voice detected", "assist": status}
     except Exception as e:
-        logger.error(f"Assist model error: {e}")
-        return {"status": "error", "message": "Assist model failed"}
+        logger.error(f"Assist model inference failed: {e}")
+        raise HTTPException(status_code=500, detail="Assist model internal error")
 
-    # Voice embedding check
+    if status != "bonafide":
+        return {"status": "failed", "message": "Spoofed or synthetic voice detected", "assist": status}
+
     try:
         emb_new = get_embedding(model, file, device)
         emb_ref = db.get_embedding(username, device)
         score = cosine_score(emb_new, emb_ref)
     except Exception as e:
-        logger.error(f"Voice processing error: {e}")
-        return {"status": "error", "message": "Failed to process voice file"}
+        logger.error(f"Voice processing failed: {e}")
+        raise HTTPException(status_code=500, detail="Voice processing failed")
 
     result = "accepted" if score > THRESHOLD else "rejected"
     return {
@@ -149,7 +157,7 @@ async def spoof_check(file: UploadFile = File(...)):
         }
     except Exception as e:
         logger.error(f"SpoofCheck error: {e}")
-        return {"status": "error", "message": "Failed to analyze voice file"}
+        raise HTTPException(status_code=500, detail="Failed to analyze voice file")
 
 
 @router.get("/users")
