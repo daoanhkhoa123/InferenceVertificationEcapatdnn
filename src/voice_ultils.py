@@ -24,7 +24,12 @@ def load_parameters(self, path, device = None):
 def _load_any_format(file, sr: int = 16000):
     file.file.seek(0)
     data = file.file.read()
+
     try:
+        file.file.seek(0)
+        audio, sr = sf.read(file.file, dtype='float32')
+        return audio, sr
+    except Exception:
         import ffmpeg
         out, _ = (
             ffmpeg
@@ -33,10 +38,6 @@ def _load_any_format(file, sr: int = 16000):
             .run(input=data, capture_stdout=True, capture_stderr=True, quiet=True)
         )
         audio, sr = sf.read(io.BytesIO(out), dtype='float32')
-        return audio, sr
-    except Exception:
-        file.file.seek(0)
-        audio, sr = sf.read(file.file, dtype='float32')
         return audio, sr
 
 def get_embedding(model, file:UploadFile, device):
